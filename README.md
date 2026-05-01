@@ -1,4 +1,4 @@
-<h1>Wingman 🤖 <img src="https://img.shields.io/sourceforge/dt/mywingman" alt="SourceForge Downloads"> </h1>
+<h1>Wingman 
 <h2>Your Personal AI Assistant For Windows, Linux 💻🐧</h2>
 
 <p>Wingman is not just an AI assistant; it's your reliable companion in the digital world. Powered by the Facebook BlenderBot-1B-Distill model, Wingman excels in open-domain conversations, providing engaging and human-like interactions.</p>
