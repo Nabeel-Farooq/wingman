@@ -1,28 +1,66 @@
+import re
+import webbrowser
 import pywhatkit.misc as kit
+
 import VoiceEngine
-import webbrowser as web
-import re 
 import SpeechRecogniter
 
-def play(strcommand):
-        strcommand.replace("play", "")
-        if "spotify" in strcommand:
-            spotify(strcommand)
-        elif "youtube" in strcommand:
-            youtube(strcommand)
-        else:
-            VoiceEngine.say("Sorry, I can't Determine The PlatForm To Play . I support only YouTube and Spotify.")
-            VoiceEngine.say("Can You Tell Me Which PlatForm Do You Like To Play The Song")
-            command = str(SpeechRecogniter.getinput()).lower()
-            if "youtube" in command or "spotify" in command : play(command)
-            else : VoiceEngine.say("Sorry I Unable To Play It.")
-            
-def youtube(strcommand):
-        strcommand = re.sub(r"(play|youtube|on)", "", strcommand)
-        VoiceEngine.say("Starting YouTube to play " + strcommand)
-        kit.playonyt(strcommand)
 
-def spotify( strcommand):
-        strcommand = re.sub(r"(play|spotify|on)", "", strcommand)
-        VoiceEngine.say("Starting Spotify to play " + strcommand)
-        web.open_new_tab("https://open.spotify.com/search/" + strcommand)
+def play(command: str):
+    command = command.lower().strip()
+
+    platform = detect_platform(command)
+    query = clean_query(command)
+
+    if not query:
+        VoiceEngine.say("What do you want me to play?")
+        return
+
+    if platform == "youtube":
+        play_youtube(query)
+    elif platform == "spotify":
+        play_spotify(query)
+    else:
+        ask_platform_and_retry(query)
+
+
+def detect_platform(command: str) -> str | None:
+    if "youtube" in command:
+        return "youtube"
+    if "spotify" in command:
+        return "spotify"
+    return None
+
+
+def clean_query(command: str) -> str:
+    # Remove trigger words and normalize spaces
+    cleaned = re.sub(r"\b(play|on|youtube|spotify)\b", "", command)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def ask_platform_and_retry(query: str):
+    VoiceEngine.say("I can play on YouTube or Spotify. Which one do you prefer?")
+    
+    try:
+        response = str(SpeechRecogniter.getinput()).lower()
+    except Exception:
+        VoiceEngine.say("I couldn't hear you clearly.")
+        return
+
+    if "youtube" in response:
+        play_youtube(query)
+    elif "spotify" in response:
+        play_spotify(query)
+    else:
+        VoiceEngine.say("Sorry, I still couldn't determine the platform.")
+
+
+def play_youtube(query: str):
+    VoiceEngine.say(f"Playing {query} on YouTube")
+    kit.playonyt(query)
+
+
+def play_spotify(query: str):
+    VoiceEngine.say(f"Playing {query} on Spotify")
+    url = f"https://open.spotify.com/search/{query.replace(' ', '%20')}"
+    webbrowser.open_new_tab(url)
