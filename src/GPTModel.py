@@ -1,91 +1,142 @@
-import requests
-import pywhatkit.misc as kit
+import os
 import re
+import requests
+from bs4 import BeautifulSoup
+from dotenv import load_dotenv
+import pywhatkit as kit
+import wikipedia
+
 import VoiceEngine
 import SpeechRecogniter
-from bs4 import BeautifulSoup
-from dotenv import dotenv_values
 
-env_vars = dotenv_values('E:\\dev\\Assistant\\.env')
-huggingfacehub_api_token = env_vars['HUGGINGFACEHUB_API_TOKEN']
+# Load environment variables
+load_dotenv()
+HUGGINGFACE_API_TOKEN = os.getenv("HUGGINGFACEHUB_API_TOKEN")
 
-#https://api-inference.huggingface.co/models/facebook/blenderbot-3B
+GPT_MODEL_URL = "https://api-inference.huggingface.co/models/facebook/blenderbot-1B-distill"
 
-GPT2 = "https://api-inference.huggingface.co/models/facebook/blenderbot-1B-distill"
-headers = {
-    "Authorization": f"Bearer {huggingfacehub_api_token}"
+HEADERS = {
+    "Authorization": f"Bearer {HUGGINGFACE_API_TOKEN}",
+    "User-Agent": "Mozilla/5.0"
 }
-USER_AGENT = "User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/114.0"
 
 
-def google(strcommand):
-        VoiceEngine.say("Searching In Google")
-        strcommand = re.sub(r"search|google","",strcommand)
-        VoiceEngine.say("Searching "+strcommand+" On Google")
-        kit.search(strcommand)
+# -------------------- UTIL --------------------
 
-def querysearch(strcommand):
-        try:
-            URL = "https://www.google.co.in/search?q="+strcommand
-            page = requests.get(URL,headers=headers)
-            soup = BeautifulSoup(page.content,"html.parser")
-            result = soup.find(class_='Z0LcW t2b5Cf')
-            if result is not None:
-               result = result.get_text()
-               VoiceEngine.say(result)
-            result = soup.find(class_="vk_gy vk_sh card-section sL6Rbf")
-            if result is not None: 
-              result = result.get_text()
-              VoiceEngine.say(result)
-        except:
-              google(strcommand)         
-           
-def wiki(strcommand):
-       VoiceEngine.say("Searching In WikiPeadia")
-       try:
-        strcommand = re.sub(r"use wikipedia","",strcommand)
-        strcommand = re.sub(r"wikipedia","",strcommand)
-
-        results = wiki.search(strcommand)
-        for result in results:
-           VoiceEngine.say(wiki.page(result).summary)
-       except:
-         VoiceEngine.say("Sorry I Can't Find It On WikiPeadia But Google Might Contain Some Info About It")
-         VoiceEngine.say("would you like to do a google search")
-         command = str(SpeechRecogniter.getinput()).lower()
-         if "ok " in command or "sure" in command or "do" in command : google(strcommand)
-         else : return
-
-def gpt2(payload):
-        
-        print("gpt2")
-        is_Key_set = is_APIKey_Set()
-        if (is_Key_set == False):
-             VoiceEngine.say("I Require A HuggingFace User Access Tokens To Use My Full Power Do Like To Know More About It")
-             command = str(SpeechRecogniter.getinput()).lower()
-             if "ok " in command or "sure" in command : notsetEnvDetails()
-             else : return     
-
-        response1 = requests.post(GPT2, headers=headers, json=payload)
-        json_response = response1.json()
-        generated_text = json_response['generated_text']
-        VoiceEngine.say(generated_text)
+def clean_query(command: str) -> str:
+    return re.sub(r"(search|google|wikipedia|use wikipedia)", "", command, flags=re.IGNORECASE).strip()
 
 
-def is_APIKey_Set(): 
-     if huggingfacehub_api_token is None:
-          return False
-
-def notsetEnvDetails():
-     huggingface="https://huggingface.co/docs/hub/security-tokens"
-     VoiceEngine.say("I Require A HuggingFace User Access Tokens To Use MY GPT Model")
-     VoiceEngine.say("You Can Create A User Access Tokens From The HuggingFace WebSite For Free")
-     VoiceEngine.say("Do You Like To Open The Tutorial Page About How To Get HuggingFace User Access Tokens")
-     command = str(SpeechRecogniter.getinput()).lower()
-     if "ok " in command or "sure" in command or "do" in command or "open" in command: google(huggingface)
-     else : return   
-     
-     
+def speak(text: str):
+    VoiceEngine.say(text)
 
 
-          
+def listen() -> str:
+    return str(SpeechRecogniter.getinput()).lower()
+
+
+# -------------------- GOOGLE --------------------
+
+def google(command: str):
+    query = clean_query(command)
+    speak(f"Searching {query} on Google")
+    kit.search(query)
+
+
+def query_search(command: str):
+    query = clean_query(command)
+
+    try:
+        url = f"https://www.google.com/search?q={query}"
+        response = requests.get(url, headers=HEADERS, timeout=10)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Try featured snippets
+        selectors = [
+            ('Z0LcW t2b5Cf'),  # direct answer
+            ('vk_gy vk_sh card-section sL6Rbf')  # knowledge panel
+        ]
+
+        for cls in selectors:
+            result = soup.find(class_=cls)
+            if result:
+                speak(result.get_text())
+                return
+
+        # fallback
+        google(query)
+
+    except requests.RequestException:
+        speak("Network error. Falling back to Google search.")
+        google(query)
+
+
+# -------------------- WIKIPEDIA --------------------
+
+def wiki_search(command: str):
+    query = clean_query(command)
+    speak("Searching Wikipedia")
+
+    try:
+        results = wikipedia.search(query)
+
+        if not results:
+            raise ValueError("No results")
+
+        summary = wikipedia.summary(results[0], sentences=2)
+        speak(summary)
+
+    except Exception:
+        speak("I couldn't find it on Wikipedia. Want me to search on Google?")
+        cmd = listen()
+
+        if any(x in cmd for x in ["ok", "sure", "yes", "do"]):
+            google(query)
+
+
+# -------------------- HUGGINGFACE --------------------
+
+def is_api_key_set() -> bool:
+    return bool(HUGGINGFACE_API_TOKEN)
+
+
+def show_api_key_help():
+    url = "https://huggingface.co/docs/hub/security-tokens"
+    speak("You need a Hugging Face API token to use this feature.")
+    speak("Do you want me to open the guide?")
+
+    cmd = listen()
+    if any(x in cmd for x in ["ok", "sure", "yes", "open"]):
+        google(url)
+
+
+def gpt_chat(prompt: str):
+    if not is_api_key_set():
+        speak("Hugging Face API key is missing.")
+        show_api_key_help()
+        return
+
+    payload = {"inputs": prompt}
+
+    try:
+        response = requests.post(
+            GPT_MODEL_URL,
+            headers=HEADERS,
+            json=payload,
+            timeout=15
+        )
+        response.raise_for_status()
+
+        data = response.json()
+
+        # safer parsing
+        if isinstance(data, list) and "generated_text" in data[0]:
+            text = data[0]["generated_text"]
+            speak(text)
+        else:
+            speak("Sorry, I couldn't process that response.")
+
+    except requests.RequestException:
+        speak("Error contacting AI service.")
